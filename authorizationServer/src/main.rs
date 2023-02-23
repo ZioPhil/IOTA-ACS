@@ -80,7 +80,7 @@ fn handle_client(mut stream: TcpStream, issuer: Account) {
                         match lib::verify_vp(&String::from(vp), &issuer, challenge).await {
                             Ok(..) => {
                                 println!("VP verified!");
-                                //A questo punto il client si è autenticato
+                                stream.write(b"verified").unwrap();
                             },
                             Err(err) => {
                                 eprintln!("Vp not validated: {:?}", err);
