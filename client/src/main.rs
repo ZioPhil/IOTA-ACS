@@ -7,6 +7,7 @@ use std::io::prelude::*;
 use identity_iota::account::{Account, AccountBuilder};
 use identity_iota::core::Timestamp;
 use identity_iota::iota_core::IotaDID;
+use std::process::Command;
 
 mod lib;
 
@@ -189,6 +190,30 @@ async fn main() {
                         };
 
                         stream.write(B(vp.as_str())).unwrap();
+
+                        match stream.read(&mut data) {
+                            Ok(..) => {
+                                let upload = Command::new("ipfs")
+                                    .arg("add")
+                                    .arg("modelloProva")
+                                    .output();
+
+                                let output: String = match String::from_utf8(upload.unwrap().stdout) {
+                                    Ok(res) => res,
+                                    Err(err) => {
+                                        eprintln!("Error: {:?}", err);
+                                        return
+                                    },
+                                };
+
+                                let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
+                                println!("Cid: {}", a);
+                            },
+                            Err(err) => {
+                                eprintln!("Error: {:?}", err);
+                                return
+                            },
+                        };
                     },
                     _ => {
                         println!("Wrong input! Please retry.\n");
