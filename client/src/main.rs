@@ -218,29 +218,29 @@ async fn main() {
                         break;
                     },
                     "1" => {
-                        let ipfs_content = match lib::create_ipfs_content(user.as_mut.unwrap()) {
-                            Ok(res) => res,
+                        match lib::create_ipfs_content(user.as_mut().unwrap()).await {
+                            Ok(_) => {
+                                let upload = Command::new("ipfs")
+                                    .arg("add")
+                                    .arg("ipfs_content.txt")
+                                    .output();
+
+                                let output: String = match String::from_utf8(upload.unwrap().stdout) {
+                                    Ok(res) => res,
+                                    Err(err) => {
+                                        eprintln!("Error: {:?}", err);
+                                        return
+                                    },
+                                };
+
+                                let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
+                                println!("Cid: {}", a);
+                            },
                             Err(err) => {
                                 eprintln!("Error: {:?}", err);
                                 return
                             },
                         };
-
-                        let upload = Command::new("ipfs")
-                            .arg("add")
-                            .arg(ipfs_content)
-                            .output();
-
-                        let output: String = match String::from_utf8(upload.unwrap().stdout) {
-                            Ok(res) => res,
-                            Err(err) => {
-                                eprintln!("Error: {:?}", err);
-                                return
-                            },
-                        };
-
-                        let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
-                        println!("Cid: {}", a);
                     },
                     _ => {
                         println!("Wrong input! Please retry.\n");

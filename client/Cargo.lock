@@ -408,6 +408,8 @@ dependencies = [
  "iota-client 1.3.0 (git+https://github.com/iotaledger/iota.rs?branch=production)",
  "rand",
  "rand_chacha",
+ "serde",
+ "serde_json",
  "sha2 0.10.6",
  "tokio",
 ]

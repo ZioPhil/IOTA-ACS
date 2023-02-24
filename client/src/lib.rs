@@ -1,15 +1,20 @@
 use std::fs::File;
-use std::io;
+use std::{fs, io};
 use identity_iota::account::{Account, AccountBuilder, AutoSave, IdentitySetup, MethodContent, Result};
 use identity_iota::client::{ClientBuilder};
 use identity_iota::core::{FromJson, KeyComparable, Timestamp, ToJson, Url};
 use identity_iota::credential::{Credential, Presentation, PresentationBuilder};
 use identity_iota::iota_core::{IotaDID, Network};
-use identity_iota::account_storage::{KeyLocation, Stronghold};
+use identity_iota::account_storage::{KeyLocation, Signature, Stronghold};
 use identity_iota::crypto::ProofOptions;
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader, Read, Write};
 use sha2::{Sha256, Digest};
+use std::str::from_utf8;
+use bstr::ByteVec;
+use iota_client::bee_message::output::Output::SignatureLockedDustAllowance;
+
+extern crate serde;
 
 pub fn write_did(did: &IotaDID) -> std::io::Result<()> {
     let mut output = File::create("did.txt")?;
@@ -19,6 +24,11 @@ pub fn write_did(did: &IotaDID) -> std::io::Result<()> {
 pub fn write_vc(vc: &str) -> std::io::Result<()> {
     let mut output = File::create("vc.txt")?;
     write!(output, "{}", vc)
+}
+
+pub fn write_content(content: String) -> std::io::Result<()> {
+    let mut output = File::create("ipfs_content.txt")?;
+    write!(output, "{}", content)
 }
 
 pub fn read_did() -> std::io::Result<String> {
@@ -48,6 +58,7 @@ pub async fn create_builder(password: String, network_name: String, url: String)
                 .network(network.clone())
                 .primary_node(url.as_str(), None, None)?,
         );
+use std::str::from_utf8;
     Ok(builder)
 }
 
@@ -97,27 +108,19 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
     Ok(presentation_json)
 }
 
-pub async fn create_ipfs_content(user: &Account) -> Result<String> {
-    let mut file = File::open("model.json").unwrap();
+pub async fn create_ipfs_content(user: &Account) -> Result<()> {
+    let mut model = fs::read_to_string("model.json").unwrap().into_bytes().to_owned();
 
-    let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher).unwrap();
-    let hash = hasher.finalize();
-    let mut hex_hash = base16ct::lower::encode_string(&hash).to_owned();
-    println!("Hex-encoded hash: {}", hex_hash);
+    let b = user.document().default_signing_method().unwrap();
+    let c = KeyLocation::from_verification_method(b).unwrap();
+    let a = user.storage().key_sign(user.did(), &c, model).await.unwrap();
+    let sig = serde_json::to_string(&a).unwrap().to_owned();
 
-    user
-        .sign("#SCKey", &mut hex_hash, ProofOptions::default())
-        .await?;
-
-    let key = user.document().extract_signing_keys().get(0).unwrap().unwrap().data().try_decode();
-
-    let a = user
-
-    let reader = BufReader::new(file);
-    let mut model = reader.lines().enumerate().next().unwrap().1.unwrap().to_owned();
-
+    let mut model = fs::read_to_string("model.json").unwrap().to_owned();
     model.push_str("\n");
-    model.push_str(&hex_hash);
-    Ok(model)
+    model.push_str(&sig);
+
+    write_content(model);
+
+    Ok(())
 }
