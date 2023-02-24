@@ -32,7 +32,6 @@ pub async fn create_client(network_name: String, url: String) -> Result<Client> 
         .primary_node(url.as_str(), None, None)?
         .build()
         .await?;
-
     Ok(client)
 }
 

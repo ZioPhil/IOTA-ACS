@@ -1,6 +1,6 @@
 use std::io;
 use std::net::{TcpStream};
-use std::io::{Read, Write};
+use std::io::{Read};
 use std::str::from_utf8;
 use bstr::B;
 use std::io::prelude::*;
@@ -100,7 +100,8 @@ async fn main() {
                 match msg.as_str() {
                     "0" => {
                         stream.write(b"shutdown").unwrap();
-                        break;
+                        println!("\nClient terminated.");
+                        return
                     },
                     "1" => {
                         let did: String = match lib::read_did() {
@@ -193,21 +194,7 @@ async fn main() {
 
                         match stream.read(&mut data) {
                             Ok(..) => {
-                                let upload = Command::new("ipfs")
-                                    .arg("add")
-                                    .arg("modelloProva")
-                                    .output();
-
-                                let output: String = match String::from_utf8(upload.unwrap().stdout) {
-                                    Ok(res) => res,
-                                    Err(err) => {
-                                        eprintln!("Error: {:?}", err);
-                                        return
-                                    },
-                                };
-
-                                let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
-                                println!("Cid: {}", a);
+                                break;
                             },
                             Err(err) => {
                                 eprintln!("Error: {:?}", err);
@@ -222,10 +209,51 @@ async fn main() {
 
                 println!("\nWhat do you want to do? (Insert the right number)\n1)Sign up\n2)Sign in\n0) Close the application\n");
             }
+
+            println!("\nWhat do you want to do? (Insert the right number)\n1)Upload model to IPFS\n0) Close the application\n");
+            for line in stdin.lock().lines() {
+                let msg = line.unwrap();
+                match msg.as_str() {
+                    "0" => {
+                        break;
+                    },
+                    "1" => {
+                        let ipfs_content = match lib::create_ipfs_content(user.as_mut.unwrap()) {
+                            Ok(res) => res,
+                            Err(err) => {
+                                eprintln!("Error: {:?}", err);
+                                return
+                            },
+                        };
+
+                        let upload = Command::new("ipfs")
+                            .arg("add")
+                            .arg(ipfs_content)
+                            .output();
+
+                        let output: String = match String::from_utf8(upload.unwrap().stdout) {
+                            Ok(res) => res,
+                            Err(err) => {
+                                eprintln!("Error: {:?}", err);
+                                return
+                            },
+                        };
+
+                        let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
+                        println!("Cid: {}", a);
+                    },
+                    _ => {
+                        println!("Wrong input! Please retry.\n");
+                    },
+                };
+                println!("\nWhat do you want to do? (Insert the right number)\n1)Upload model to IPFS\n0) Close the application\n");
+            }
+            stream.write(b"shutdown").unwrap();
+            println!("\nClient terminated.");
+            return
         },
         Err(e) => {
             println!("Failed to connect: {}", e);
         }
     }
-    println!("\nClient terminated.");
 }

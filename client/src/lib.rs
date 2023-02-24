@@ -1,13 +1,15 @@
 use std::fs::File;
+use std::io;
 use identity_iota::account::{Account, AccountBuilder, AutoSave, IdentitySetup, MethodContent, Result};
 use identity_iota::client::{ClientBuilder};
-use identity_iota::core::{FromJson, Timestamp, ToJson, Url};
+use identity_iota::core::{FromJson, KeyComparable, Timestamp, ToJson, Url};
 use identity_iota::credential::{Credential, Presentation, PresentationBuilder};
 use identity_iota::iota_core::{IotaDID, Network};
-use identity_iota::account_storage::Stronghold;
+use identity_iota::account_storage::{KeyLocation, Stronghold};
 use identity_iota::crypto::ProofOptions;
 use std::path::PathBuf;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use sha2::{Sha256, Digest};
 
 pub fn write_did(did: &IotaDID) -> std::io::Result<()> {
     let mut output = File::create("did.txt")?;
@@ -93,4 +95,29 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
     let presentation_json: String = presentation.to_json()?;
 
     Ok(presentation_json)
+}
+
+pub async fn create_ipfs_content(user: &Account) -> Result<String> {
+    let mut file = File::open("model.json").unwrap();
+
+    let mut hasher = Sha256::new();
+    io::copy(&mut file, &mut hasher).unwrap();
+    let hash = hasher.finalize();
+    let mut hex_hash = base16ct::lower::encode_string(&hash).to_owned();
+    println!("Hex-encoded hash: {}", hex_hash);
+
+    user
+        .sign("#SCKey", &mut hex_hash, ProofOptions::default())
+        .await?;
+
+    let key = user.document().extract_signing_keys().get(0).unwrap().unwrap().data().try_decode();
+
+    let a = user
+
+    let reader = BufReader::new(file);
+    let mut model = reader.lines().enumerate().next().unwrap().1.unwrap().to_owned();
+
+    model.push_str("\n");
+    model.push_str(&hex_hash);
+    Ok(model)
 }

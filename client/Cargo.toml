@@ -14,3 +14,6 @@ rand = { version = "0.8.5" }
 rand_chacha = { version = "0.3.1" }
 
 bstr = "1.2.0"
+
+sha2 = "0.10.6"
+base16ct = { version = "0.1.1", features = ["alloc"] }
