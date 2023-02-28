@@ -2,19 +2,50 @@ use std::fs::File;
 use std::{fs, io};
 use identity_iota::account::{Account, AccountBuilder, AutoSave, IdentitySetup, MethodContent, Result};
 use identity_iota::client::{ClientBuilder};
-use identity_iota::core::{FromJson, KeyComparable, Timestamp, ToJson, Url};
+use identity_iota::core::{FromJson, Timestamp, ToJson, Url};
 use identity_iota::credential::{Credential, Presentation, PresentationBuilder};
 use identity_iota::iota_core::{IotaDID, Network};
-use identity_iota::account_storage::{KeyLocation, Signature, Stronghold};
-use identity_iota::crypto::ProofOptions;
+use identity_iota::account_storage::{Stronghold};
+use identity_iota::crypto::{Ed25519, GetSignature, GetSignatureMut, JcsEd25519, Proof, ProofOptions, PublicKey, SetSignature};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader, Read, Write};
 use sha2::{Sha256, Digest};
 use std::str::from_utf8;
 use bstr::ByteVec;
-use iota_client::bee_message::output::Output::SignatureLockedDustAllowance;
-
+use identity_iota::did::verifiable::VerifierOptions;
+use sha2::digest::Mac;
 extern crate serde;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Signable {
+    data: String,
+    #[serde(skip)]
+    proof: Option<Proof>,
+}
+
+impl Signable {
+    pub fn new(data: String) -> Self {
+        Self { data, proof: None }
+    }
+}
+
+impl GetSignature for Signable {
+    fn signature(&self) -> Option<&Proof> {
+        self.proof.as_ref()
+    }
+}
+
+impl GetSignatureMut for Signable {
+    fn signature_mut(&mut self) -> Option<&mut Proof> {
+        self.proof.as_mut()
+    }
+}
+
+impl SetSignature for Signable {
+    fn set_signature(&mut self, signature: identity_iota::crypto::Proof) {
+        self.proof = Some(signature)
+    }
+}
 
 pub fn write_did(did: &IotaDID) -> std::io::Result<()> {
     let mut output = File::create("did.txt")?;
@@ -109,18 +140,43 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
 }
 
 pub async fn create_ipfs_content(user: &Account) -> Result<()> {
+    let mut file = File::open("model.json").unwrap();
     let mut model = fs::read_to_string("model.json").unwrap().into_bytes().to_owned();
 
-    let b = user.document().default_signing_method().unwrap();
-    let c = KeyLocation::from_verification_method(b).unwrap();
-    let a = user.storage().key_sign(user.did(), &c, model).await.unwrap();
-    let sig = serde_json::to_string(&a).unwrap().to_owned();
+    let mut hasher = Sha256::new();
+    io::copy(&mut file, &mut hasher).unwrap();
+    let hash = hasher.finalize();
+    let mut hex_hash = base16ct::lower::encode_string(&hash).to_owned();
+    println!("Hex-encoded hash: {}", hex_hash.clone());
 
-    let mut model = fs::read_to_string("model.json").unwrap().to_owned();
+    let mut signable = Signable::new(hex_hash.clone());
+    user.sign("SCKey", &mut signable, Default::default()).await?;
+
+    let verified: bool = user
+        .document()
+        .verify_data(&signable, &VerifierOptions::default())
+        .is_ok();
+    println!("Verified = {}", verified);
+
     model.push_str("\n");
-    model.push_str(&sig);
+    model.push_str(serde_json::to_string(&signable).unwrap());
 
-    write_content(model);
+    // prova processo di verifica successivo
+    //----------------------------------------------------------------------------
+    let mode = String::from_utf8(model.clone()).unwrap();
+    let mut a = mode.lines();
+    let model2 = a.next().unwrap();
+    let hash: Signable = serde_json::from_str(a.next().unwrap()).unwrap();
+    println!("Hash: {}", hash.data);
+
+    let ver: bool = user
+        .document()
+        .verify_data(&hash, &VerifierOptions::default())
+        .is_ok();
+    println!("Verified = {}", ver);
+    //----------------------------------------------------------------------------
+
+    write_content(String::from_utf8(model).unwrap());
 
     Ok(())
 }
