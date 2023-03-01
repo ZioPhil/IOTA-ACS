@@ -220,7 +220,6 @@ async fn main() {
                     "1" => {
                         match lib::create_ipfs_content(user.as_mut().unwrap()).await {
                             Ok(_) => {
-                                /*
                                 let upload = Command::new("ipfs")
                                     .arg("add")
                                     .arg("ipfs_content.txt")
@@ -234,11 +233,26 @@ async fn main() {
                                     },
                                 };
 
-                                let a = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
-                                println!("Cid: {}", a);
+                                let cid = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
+                                println!("CID: {}", cid);
 
-                                 */
-                                println!("E' andata!!");
+                                let vc: String = match lib::read_vc() {
+                                    Ok(vc) => vc,
+                                    Err(err) => {
+                                        eprintln!("Error: {:?}", err);
+                                        return
+                                    },
+                                };
+                                let round = 0;
+                                match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, round.to_string()).await {
+                                    Ok(_) => {
+                                        println!("Andata");
+                                    },
+                                    Err(err) => {
+                                        eprintln!("Error: {:?}", err);
+                                        return
+                                    },
+                                }
                             },
                             Err(err) => {
                                 eprintln!("Error: {:?}", err);

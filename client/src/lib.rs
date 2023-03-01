@@ -9,11 +9,13 @@ use identity_iota::account_storage::{Stronghold};
 use identity_iota::crypto::{Ed25519, GetSignature, GetSignatureMut, JcsEd25519, Proof, ProofOptions, PublicKey, SetSignature};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::process::Command;
 use sha2::{Sha256, Digest};
 use std::str::from_utf8;
 use bstr::ByteVec;
 use identity_iota::did::verifiable::VerifierOptions;
 use sha2::digest::Mac;
+use iota_client::{Client, Result as clientResult};
 extern crate serde;
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -72,6 +74,15 @@ pub fn read_vc() -> std::io::Result<String> {
     let file = File::open("vc.txt").unwrap();
     let reader = BufReader::new(file);
     reader.lines().enumerate().next().unwrap().1
+}
+
+pub async fn create_client(network_name: String, url: String) -> clientResult<Client> {
+    let client: Client = Client::builder()
+        .with_network(&network_name)
+        .with_primary_node(url.as_str(), None, None)?
+        .finish()
+        .await?;
+    Ok(client)
 }
 
 pub async fn create_builder(password: String, network_name: String, url: String) -> Result<AccountBuilder> {
@@ -140,9 +151,10 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
 }
 
 pub async fn create_ipfs_content(user: &Account) -> Result<()> {
-    let mut file = File::open("model.json").unwrap();
+    //let mut file = File::open("model.json").unwrap();
     let mut model = fs::read_to_string("model.json").unwrap().into_bytes().to_owned();
 
+    /*
     let mut hasher = Sha256::new();
     io::copy(&mut file, &mut hasher).unwrap();
     let hash = hasher.finalize();
@@ -175,8 +187,35 @@ pub async fn create_ipfs_content(user: &Account) -> Result<()> {
         .is_ok();
     println!("Verified = {}", ver);
     //----------------------------------------------------------------------------
-
+    */
     write_content(String::from_utf8(model).unwrap());
+    Ok(())
+}
+
+pub async fn upload_to_tangle(user: &Account, cid: String, mut vc: String, index: String) -> Result<()> {
+    let client = create_client(String::from("dev"), String::from("http://127.0.0.1:14265")).await.unwrap();
+
+    vc.push('\n');
+    vc.push_str(&cid);
+
+    let mut vccid = Signable::new(vc.clone());
+    user.sign("SCKey", &mut vccid, Default::default()).await?;
+
+    let verified: bool = user
+        .document()
+        .verify_data(&vccid, &VerifierOptions::default())
+        .is_ok();
+    println!("Verified = {}", verified);
+
+    let mut tag = String::from("IOTAFederatedLearning#");
+    tag.push_str(&index);
+
+    let message = client
+        .message()
+        .with_index(tag)
+        .with_data(vccid.to_json_vec().unwrap())
+        .finish()
+        .await;
 
     Ok(())
 }
