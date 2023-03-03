@@ -243,10 +243,14 @@ async fn main() {
                                         return
                                     },
                                 };
-                                let round = 0;
-                                match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, round.to_string()).await {
+                                let mut round = 0;
+                                match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, &round.to_string()).await {
                                     Ok(_) => {
-                                        println!("Andata");
+                                        while round < 1 {
+                                            println!("Round: {}", &round.to_string());
+                                            lib::get_tangle_data(&round.to_string()).await;
+                                            round += 1;
+                                        };
                                     },
                                     Err(err) => {
                                         eprintln!("Error: {:?}", err);

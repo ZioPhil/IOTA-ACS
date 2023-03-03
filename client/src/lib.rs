@@ -16,12 +16,15 @@ use bstr::ByteVec;
 use identity_iota::did::verifiable::VerifierOptions;
 use sha2::digest::Mac;
 use iota_client::{Client, Result as clientResult};
+use iota_client::bee_message::MessageId;
+use std::str::FromStr;
+
 extern crate serde;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Signable {
     data: String,
-    #[serde(skip)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     proof: Option<Proof>,
 }
 
@@ -151,28 +154,8 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
 }
 
 pub async fn create_ipfs_content(user: &Account) -> Result<()> {
-    //let mut file = File::open("model.json").unwrap();
     let mut model = fs::read_to_string("model.json").unwrap().into_bytes().to_owned();
-
     /*
-    let mut hasher = Sha256::new();
-    io::copy(&mut file, &mut hasher).unwrap();
-    let hash = hasher.finalize();
-    let mut hex_hash = base16ct::lower::encode_string(&hash).to_owned();
-    println!("Hex-encoded hash: {}", hex_hash.clone());
-
-    let mut signable = Signable::new(hex_hash.clone());
-    user.sign("SCKey", &mut signable, Default::default()).await?;
-
-    let verified: bool = user
-        .document()
-        .verify_data(&signable, &VerifierOptions::default())
-        .is_ok();
-    println!("Verified = {}", verified);
-
-    model.push_str("\n");
-    model.push_str(serde_json::to_string(&signable).unwrap());
-
     // prova processo di verifica successivo
     //----------------------------------------------------------------------------
     let mode = String::from_utf8(model.clone()).unwrap();
@@ -192,7 +175,7 @@ pub async fn create_ipfs_content(user: &Account) -> Result<()> {
     Ok(())
 }
 
-pub async fn upload_to_tangle(user: &Account, cid: String, mut vc: String, index: String) -> Result<()> {
+pub async fn upload_to_tangle(user: &Account, cid: String, mut vc: String, index: &String) -> Result<()> {
     let client = create_client(String::from("dev"), String::from("http://127.0.0.1:14265")).await.unwrap();
 
     vc.push('\n');
@@ -210,12 +193,51 @@ pub async fn upload_to_tangle(user: &Account, cid: String, mut vc: String, index
     let mut tag = String::from("IOTAFederatedLearning#");
     tag.push_str(&index);
 
+    println!("Prima: {}", &vccid.data);
+    let content = serde_json::to_vec(&vccid).unwrap();
+/*
     let message = client
         .message()
         .with_index(tag)
-        .with_data(vccid.to_json_vec().unwrap())
+        .with_data(content)
         .finish()
         .await;
+*/
+    println!("Message uploaded to tangle!");
+    Ok(())
+}
 
+pub async fn get_tangle_data(index: &String) -> Result<()> {
+    let client = create_client(String::from("dev"), String::from("http://127.0.0.1:14265")).await.unwrap();
+    //let mut res = Vec::new();
+
+    let mut tag = String::from("IOTAFederatedLearning#");
+    tag.push_str(&index);
+
+    let fetched_message_ids = client.get_message().index(tag).await.unwrap();
+    let a = format!("{fetched_message_ids:?}");
+    let a = a.split_at(a.len() - 1);
+    let a = a.0.split_at(1);
+    let a = a.1;
+
+    let mut split = a.split(", ");
+    let mut vec = split.collect::<Vec<&str>>();
+
+    for (i, val) in vec.iter_mut().enumerate() {
+        *val = &*val.split_at(val.len()-1).0;
+        *val = &*val.split_at(10).1;
+    }
+    for (i, val) in vec.iter().enumerate() {
+        println!("In position {} we have value {}", i, val);
+        let a: &str = val.clone();
+        let o = MessageId::from_json(serde_json::from_str(a).unwrap());
+    }
+
+    /*
+    let data = client.get_message().data(fetched_message_ids.value).await.unwrap().payload().unwrap().data();
+    let data2: Signable = serde_json::from_slice(data).unwrap();
+    println!("Dopo: {}", data2.data);
+
+     */
     Ok(())
 }
