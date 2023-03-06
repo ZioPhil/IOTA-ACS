@@ -147,8 +147,8 @@ pub async fn verify_vp(presentation_json: &String, issuer: &Account, challenge: 
 
     let resolver_builder: ResolverBuilder = ResolverBuilder::new();
     let resolver: Resolver = resolver_builder.client(Arc::from(client)).build().await?;
-    //Creo il resolver in questo modo per collegarmi al tangle privato, se voglio collegarmi alla mainnet
-    //basta let resolver: Resolver = Resolver::new().await?;
+    //Resolver is created this way to connect to the private tanglem if I need to connect to mainnet i just need:
+    //let resolver: Resolver = Resolver::new().await?;
 
     resolver
         .verify_presentation(

@@ -15,6 +15,7 @@ mod lib;
 async fn main() {
     let stdin = io::stdin();
     let mut user: Option<Account> = None;
+    let mut issuer_did: Option<IotaDID> = None;
 
     println!("Insert Stronghold password:");
     println!("If the stronghold does not exists a new one will be created with the password of your choice");
@@ -193,14 +194,22 @@ async fn main() {
                         stream.write(B(vp.as_str())).unwrap();
 
                         match stream.read(&mut data) {
-                            Ok(..) => {
+                            Ok(size) => {
+                                let did = from_utf8(&data[0..size]).unwrap();
+                                issuer_did = Some(match IotaDID::parse(did) {
+                                    Ok(did) => did,
+                                    Err(err) => {
+                                        eprintln!("Error: {:?}", err);
+                                        return
+                                    },
+                                });
                                 break;
                             },
                             Err(err) => {
                                 eprintln!("Error: {:?}", err);
                                 return
                             },
-                        };
+                        }
                     },
                     _ => {
                         println!("Wrong input! Please retry.\n");
@@ -210,7 +219,7 @@ async fn main() {
                 println!("\nWhat do you want to do? (Insert the right number)\n1)Sign up\n2)Sign in\n0) Close the application\n");
             }
 
-            println!("\nWhat do you want to do? (Insert the right number)\n1)Upload model to IPFS\n0) Close the application\n");
+            println!("\nWhat do you want to do? (Insert the right number)\n1) Start model generation cycle\n0) Close the application\n");
             for line in stdin.lock().lines() {
                 let msg = line.unwrap();
                 match msg.as_str() {
@@ -218,57 +227,87 @@ async fn main() {
                         break;
                     },
                     "1" => {
-                        match lib::create_ipfs_content(user.as_mut().unwrap()).await {
-                            Ok(_) => {
-                                let upload = Command::new("ipfs")
-                                    .arg("add")
-                                    .arg("ipfs_content.txt")
-                                    .output();
+                        let mut round = 0;
 
-                                let output: String = match String::from_utf8(upload.unwrap().stdout) {
-                                    Ok(res) => res,
-                                    Err(err) => {
-                                        eprintln!("Error: {:?}", err);
-                                        return
-                                    },
-                                };
+                        //Please specify the number of rounds
+                        while round < 10 {
+                            println!("Round {} begins", round.to_string());
+                            match lib::create_ipfs_content().await {
+                                Ok(_) => {
+                                    let upload = Command::new("ipfs")
+                                        .arg("add")
+                                        .arg("ipfs_content.txt")
+                                        .output();
 
-                                let cid = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
-                                println!("CID: {}", cid);
+                                    let output: String = match String::from_utf8(upload.unwrap().stdout) {
+                                        Ok(res) => res,
+                                        Err(err) => {
+                                            eprintln!("Error: {:?}", err);
+                                            return
+                                        },
+                                    };
 
-                                let vc: String = match lib::read_vc() {
-                                    Ok(vc) => vc,
-                                    Err(err) => {
-                                        eprintln!("Error: {:?}", err);
-                                        return
-                                    },
-                                };
-                                let mut round = 0;
-                                match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, &round.to_string()).await {
-                                    Ok(_) => {
-                                        while round < 1 {
-                                            println!("Round: {}", &round.to_string());
-                                            lib::get_tangle_data(&round.to_string()).await;
+                                    let cid = output.split(' ').collect::<Vec<&str>>().get(1).unwrap().to_string();
+                                    println!("Model uploaded to IPFS! CID: {}", cid);
+
+                                    let vc: String = match lib::read_vc() {
+                                        Ok(vc) => vc,
+                                        Err(err) => {
+                                            eprintln!("Error: {:?}", err);
+                                            return
+                                        },
+                                    };
+                                    match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, &round.to_string()).await {
+                                        Ok(_) => {
+                                            println!("Content uploaded to tangle!");
+                                            let mut models = Vec::new();
+
+                                            let cids = match lib::get_tangle_data(&round.to_string(), issuer_did.as_ref().unwrap()).await {
+                                                Ok(cids) => cids,
+                                                Err(err) => {
+                                                    eprintln!("Error: {:?}", err);
+                                                    return
+                                                },
+                                            };
+
+                                            for cid in cids.iter() {
+                                                let download = Command::new("ipfs")
+                                                    .arg("cat")
+                                                    .arg(cid)
+                                                    .output();
+
+                                                let model: String = match String::from_utf8(download.unwrap().stdout) {
+                                                    Ok(res) => res,
+                                                    Err(err) => {
+                                                        eprintln!("Error: {:?}", err);
+                                                        return
+                                                    },
+                                                };
+                                                models.push(model);
+                                            }
+                                            //THE NEW MODEL IS CALCULATED BASED ON THE MODELS IN THE 'models' VECTOR
+                                            //THEN IT IS WRITTEN TO model.json AND A NEW ROUND BEGINS
+                                            println!("Retrieved and verified all models.");
                                             round += 1;
-                                        };
-                                    },
-                                    Err(err) => {
-                                        eprintln!("Error: {:?}", err);
-                                        return
-                                    },
-                                }
-                            },
-                            Err(err) => {
-                                eprintln!("Error: {:?}", err);
-                                return
-                            },
+                                        },
+                                        Err(err) => {
+                                            eprintln!("Error: {:?}", err);
+                                            return
+                                        },
+                                    }
+                                },
+                                Err(err) => {
+                                    eprintln!("Error: {:?}", err);
+                                    return
+                                },
+                            };
                         };
                     },
                     _ => {
                         println!("Wrong input! Please retry.\n");
                     },
                 };
-                println!("\nWhat do you want to do? (Insert the right number)\n1)Upload model to IPFS\n0) Close the application\n");
+                println!("\nWhat do you want to do? (Insert the right number)\n1) Start model generation cycle\n0) Close the application\n");
             }
             stream.write(b"shutdown").unwrap();
             println!("\nClient terminated.");

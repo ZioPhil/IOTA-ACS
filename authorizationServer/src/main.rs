@@ -6,6 +6,7 @@ use std::str::from_utf8;
 use identity_iota::account::{Account, AccountBuilder};
 use identity_iota::iota_core::IotaDID;
 use bstr::B;
+use identity_iota::did::DID;
 use tokio::runtime::Runtime;
 use crate::lib::create_challenge;
 
@@ -80,7 +81,7 @@ fn handle_client(mut stream: TcpStream, issuer: Account) {
                         match lib::verify_vp(&String::from(vp), &issuer, challenge).await {
                             Ok(..) => {
                                 println!("VP verified!");
-                                stream.write(b"verified").unwrap();
+                                stream.write(B(&issuer.did().as_str())).unwrap();
                             },
                             Err(err) => {
                                 eprintln!("Vp not validated: {:?}", err);
