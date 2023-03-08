@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::{fs};
+use std::{fs, io};
 use identity_iota::account::{Account, AccountBuilder, AutoSave, Error, IdentitySetup, MethodContent, Result};
 use identity_iota::client::{Client as identityClient, ClientBuilder, CredentialValidationOptions, CredentialValidator, FailFast, Resolver, ResolverBuilder};
 use identity_iota::core::{FromJson, OneOrMany, Timestamp, ToJson, Url};
@@ -9,10 +9,12 @@ use identity_iota::account_storage::{Stronghold};
 use identity_iota::crypto::{GetSignature, GetSignatureMut, Proof, ProofOptions, SetSignature};
 use std::path::PathBuf;
 use std::io::{BufRead, BufReader, Read, Write};
+use std::process::Command;
 use identity_iota::did::verifiable::VerifierOptions;
 use iota_client::{Client, Result as clientResult};
 use std::sync::Arc;
 use iota_client::bee_message::payload::Payload;
+use sha2::{Sha256, Digest};
 
 extern crate serde;
 
@@ -158,9 +160,23 @@ pub async fn create_vp(credential_json: &String, holder: &Account, challenge: (S
     Ok(presentation_json)
 }
 
-pub async fn create_ipfs_content() -> Result<()> {
-    let model = fs::read_to_string("model.json").unwrap().into_bytes().to_owned();
-    write_content(String::from_utf8(model).unwrap());
+pub async fn create_ipfs_content(user: &Account) -> Result<()> {
+    let mut file = File::open("model.json").unwrap();
+    let mut model = fs::read_to_string("model.json").unwrap();
+
+    let mut hasher = Sha256::new();
+    io::copy(&mut file, &mut hasher).unwrap();
+    let hash = hasher.finalize();
+    let mut hex_hash = base16ct::lower::encode_string(&hash);
+
+    let mut signed_hash = Signable::new(hex_hash.clone());
+    user.sign("SCKey", &mut signed_hash, Default::default()).await?;
+    let signable_serialized = serde_json::to_string(&signed_hash).unwrap();
+
+    model.push('\n');
+    model.push_str(&signable_serialized);
+
+    write_content(model);
     Ok(())
 }
 
@@ -187,7 +203,7 @@ pub async fn upload_to_tangle(user: &Account, cid: String, mut vc: String, index
     Ok(())
 }
 
-pub async fn get_tangle_data(index: &String, issuer_did: &IotaDID) -> Result<Vec<String>> {
+pub async fn get_models(index: &String, issuer_did: &IotaDID) -> Result<Vec<String>> {
     let mut res = Vec::new();
     let client = create_client_iota(String::from("dev"), String::from("http://127.0.0.1:14265")).await.unwrap();
 
@@ -234,7 +250,33 @@ pub async fn get_tangle_data(index: &String, issuer_did: &IotaDID) -> Result<Vec
                     FailFast::FirstError,
                 ).unwrap();
 
-                res.push(cid.to_string());
+                //Download the content from IPFS using the cid
+                let download = Command::new("ipfs")
+                    .arg("cat")
+                    .arg(cid)
+                    .output();
+
+                let ipfs_content: String = String::from_utf8(download.unwrap().stdout).unwrap();
+
+                let mut lines = ipfs_content.lines();
+                let mut model = lines.next().unwrap();
+                let signed_hash: Signable = serde_json::from_str(lines.next().unwrap()).unwrap();
+
+                //Verify the signature on the hash
+                let ver: bool = doc
+                    .verify_data(&signed_hash, &VerifierOptions::default())
+                    .is_ok();
+
+                if ver {
+                    //Verify the hash
+                    let mut hasher = Sha256::new();
+                    io::copy(&mut model.as_bytes(), &mut hasher).unwrap();
+                    let hash = hasher.finalize();
+                    let mut hex_hash = base16ct::lower::encode_string(&hash);
+                    if hex_hash.eq(&signed_hash.data) {
+                        res.push(model.to_string());
+                    }
+                }
             }
         }
     }

@@ -232,7 +232,7 @@ async fn main() {
                         //Please specify the number of rounds
                         while round < 10 {
                             println!("Round {} begins", round.to_string());
-                            match lib::create_ipfs_content().await {
+                            match lib::create_ipfs_content(user.as_ref().unwrap()).await {
                                 Ok(_) => {
                                     let upload = Command::new("ipfs")
                                         .arg("add")
@@ -260,35 +260,16 @@ async fn main() {
                                     match lib::upload_to_tangle(user.as_mut().unwrap(), cid, vc, &round.to_string()).await {
                                         Ok(_) => {
                                             println!("Content uploaded to tangle!");
-                                            let mut models = Vec::new();
-
-                                            let cids = match lib::get_tangle_data(&round.to_string(), issuer_did.as_ref().unwrap()).await {
-                                                Ok(cids) => cids,
+                                            let models = match lib::get_models(&round.to_string(), issuer_did.as_ref().unwrap()).await {
+                                                Ok(models) => models,
                                                 Err(err) => {
                                                     eprintln!("Error: {:?}", err);
                                                     return
                                                 },
                                             };
-
-                                            for cid in cids.iter() {
-                                                let download = Command::new("ipfs")
-                                                    .arg("cat")
-                                                    .arg(cid)
-                                                    .output();
-
-                                                let model: String = match String::from_utf8(download.unwrap().stdout) {
-                                                    Ok(res) => res,
-                                                    Err(err) => {
-                                                        eprintln!("Error: {:?}", err);
-                                                        return
-                                                    },
-                                                };
-                                                models.push(model);
-                                            }
                                             //THE NEW MODEL IS CALCULATED BASED ON THE MODELS IN THE 'models' VECTOR
                                             //THEN IT IS WRITTEN TO model.json AND A NEW ROUND BEGINS
                                             println!("Retrieved and verified all models.");
-                                            round += 1;
                                         },
                                         Err(err) => {
                                             eprintln!("Error: {:?}", err);
@@ -301,6 +282,7 @@ async fn main() {
                                     return
                                 },
                             };
+                            round += 1;
                         };
                     },
                     _ => {
